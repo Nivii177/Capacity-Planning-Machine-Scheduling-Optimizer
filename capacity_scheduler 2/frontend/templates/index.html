@@ -1,0 +1,1296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SD Capacity Scheduler</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0f0f11;
+  --surface: #161619;
+  --surface2: #1e1e23;
+  --border: #2a2a32;
+  --accent: #00e5a0;
+  --accent2: #ff6b35;
+  --accent3: #4d9fff;
+  --warn: #ffcc00;
+  --danger: #ff4466;
+  --text: #e8e8f0;
+  --text-muted: #6b6b80;
+  --text-dim: #3a3a48;
+  --mono: 'DM Mono', monospace;
+  --sans: 'Space Grotesk', sans-serif;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── GRID BACKGROUND ── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 40px 40px;
+  opacity: 0.25;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── TOP BAR ── */
+header {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(15,15,17,0.92);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 28px;
+  height: 56px;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--mono);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+.logo-dot {
+  width: 8px; height: 8px;
+  background: var(--accent);
+  border-radius: 50%;
+  box-shadow: 0 0 8px var(--accent);
+  animation: pulse 2s infinite;
+}
+@keyframes pulse {
+  0%,100%{opacity:1;transform:scale(1)}
+  50%{opacity:0.5;transform:scale(0.85)}
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.status-badge {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 3px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+.status-badge.ok { border-color: var(--accent); color: var(--accent); }
+.status-badge.warn { border-color: var(--warn); color: var(--warn); }
+
+/* ── LAYOUT ── */
+.layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: calc(100vh - 56px);
+  position: relative;
+  z-index: 1;
+}
+
+/* ── SIDEBAR ── */
+.sidebar {
+  border-right: 1px solid var(--border);
+  padding: 20px 0;
+  background: var(--surface);
+  position: sticky;
+  top: 56px;
+  height: calc(100vh - 56px);
+  overflow-y: auto;
+}
+
+.sidebar-section {
+  padding: 0 16px;
+  margin-bottom: 8px;
+}
+.sidebar-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  padding: 12px 4px 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text-muted);
+  transition: all 0.15s;
+  margin: 1px 0;
+  border: 1px solid transparent;
+}
+.nav-item:hover { background: var(--surface2); color: var(--text); }
+.nav-item.active {
+  background: rgba(0,229,160,0.08);
+  color: var(--accent);
+  border-color: rgba(0,229,160,0.2);
+}
+.nav-icon { font-size: 15px; width: 18px; text-align: center; }
+
+/* ── MAIN CONTENT ── */
+main {
+  padding: 28px;
+  overflow-y: auto;
+}
+
+.page { display: none; }
+.page.active { display: block; }
+
+/* ── PAGE HEADER ── */
+.page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+.page-title {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.page-subtitle {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  font-family: var(--mono);
+}
+
+/* ── BUTTONS ── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border-radius: 5px;
+  font-family: var(--sans);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.btn-primary {
+  background: var(--accent);
+  color: #000;
+  border-color: var(--accent);
+}
+.btn-primary:hover { background: #00ffb3; }
+.btn-secondary {
+  background: var(--surface2);
+  color: var(--text);
+  border-color: var(--border);
+}
+.btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+.btn-danger {
+  background: rgba(255,68,102,0.1);
+  color: var(--danger);
+  border-color: rgba(255,68,102,0.3);
+}
+.btn-danger:hover { background: rgba(255,68,102,0.2); }
+.btn-sm { padding: 5px 11px; font-size: 12px; }
+.btn-group { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ── CARDS ── */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 16px;
+}
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.card-title {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+/* ── STAT GRID ── */
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 16px;
+  position: relative;
+  overflow: hidden;
+}
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--accent-color, var(--accent));
+}
+.stat-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.stat-value {
+  font-size: 26px;
+  font-weight: 700;
+  font-family: var(--mono);
+  color: var(--accent-color, var(--accent));
+  letter-spacing: -0.02em;
+}
+.stat-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* ── TABLES ── */
+.table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+thead tr {
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+}
+th {
+  padding: 10px 12px;
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover { background: var(--surface2); }
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.badge-green { background: rgba(0,229,160,0.12); color: var(--accent); border: 1px solid rgba(0,229,160,0.3); }
+.badge-orange { background: rgba(255,107,53,0.12); color: var(--accent2); border: 1px solid rgba(255,107,53,0.3); }
+.badge-red { background: rgba(255,68,102,0.12); color: var(--danger); border: 1px solid rgba(255,68,102,0.3); }
+.badge-blue { background: rgba(77,159,255,0.12); color: var(--accent3); border: 1px solid rgba(77,159,255,0.3); }
+
+/* ── PROGRESS BAR ── */
+.progress-bar {
+  height: 4px;
+  background: var(--surface2);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+.progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
+/* ── FORMS ── */
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+}
+.form-group { display: flex; flex-direction: column; gap: 5px; }
+.form-label {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.form-input, .form-select {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+  padding: 8px 12px;
+  outline: none;
+  transition: border-color 0.15s;
+  width: 100%;
+}
+.form-input:focus, .form-select:focus { border-color: var(--accent); }
+.form-select option { background: var(--surface2); }
+
+/* ── UPLOAD ZONE ── */
+.upload-zone {
+  border: 2px dashed var(--border);
+  border-radius: 10px;
+  padding: 40px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+.upload-zone:hover, .upload-zone.drag-over {
+  border-color: var(--accent);
+  background: rgba(0,229,160,0.03);
+}
+.upload-zone input[type=file] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.upload-icon { font-size: 36px; margin-bottom: 12px; }
+.upload-title { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+.upload-sub { font-size: 12px; color: var(--text-muted); }
+
+/* ── NOTIFICATIONS ── */
+#toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.toast-item {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 16px;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  animation: slideIn 0.25s ease;
+  max-width: 320px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+.toast-item.success { border-left: 3px solid var(--accent); }
+.toast-item.error { border-left: 3px solid var(--danger); }
+.toast-item.info { border-left: 3px solid var(--accent3); }
+@keyframes slideIn {
+  from { transform: translateX(40px); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+/* ── LOADING ── */
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15,15,17,0.8);
+  backdrop-filter: blur(4px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  flex-direction: column;
+  gap: 16px;
+}
+.loading-overlay.show { display: flex; }
+.spinner {
+  width: 40px; height: 40px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-text { font-family: var(--mono); font-size: 12px; color: var(--text-muted); }
+
+/* ── MONTH SELECTOR ── */
+.month-grid {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.month-btn {
+  padding: 6px 14px;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text-muted);
+  transition: all 0.15s;
+}
+.month-btn:hover { border-color: var(--accent); color: var(--accent); }
+.month-btn.active {
+  background: rgba(0,229,160,0.1);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.month-btn.has-demand { color: var(--text); border-color: var(--accent3); }
+.month-btn.has-demand.active {
+  background: rgba(0,229,160,0.1);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ── MACHINE TYPE BARS ── */
+.mct-row {
+  display: grid;
+  grid-template-columns: 220px 60px 1fr 80px 80px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.mct-row:last-child { border-bottom: none; }
+.mct-name { font-size: 12px; color: var(--text-muted); font-family: var(--mono); }
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+/* ── EDITABLE INPUT IN TABLE ── */
+.inline-edit {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  width: 70px;
+  padding: 2px 4px;
+  outline: none;
+}
+.inline-edit:focus { border-bottom-color: var(--accent); }
+
+/* ── RESPONSIVE ── */
+@media (max-width: 768px) {
+  .layout { grid-template-columns: 1fr; }
+  .sidebar { display: none; }
+  main { padding: 16px; }
+}
+</style>
+</head>
+<body>
+
+<div id="loading" class="loading-overlay">
+  <div class="spinner"></div>
+  <div class="loading-text">Running optimization...</div>
+</div>
+
+<div id="toast"></div>
+
+<!-- ── HEADER ── -->
+<header>
+  <div class="logo">
+    <div class="logo-dot"></div>
+    SD Capacity Scheduler
+  </div>
+  <div class="header-right">
+    <div class="status-badge" id="data-status">No Data Loaded</div>
+    <div class="status-badge" id="opt-status">Not Optimized</div>
+  </div>
+</header>
+
+<div class="layout">
+  <!-- ── SIDEBAR ── -->
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">Workflow</div>
+      <div class="nav-item active" onclick="showPage('upload')">
+        <span class="nav-icon">📥</span> Data Import
+      </div>
+      <div class="nav-item" onclick="showPage('products')">
+        <span class="nav-icon">🧵</span> Products
+      </div>
+      <div class="nav-item" onclick="showPage('machines')">
+        <span class="nav-icon">⚙️</span> Machines
+      </div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Planning</div>
+      <div class="nav-item" onclick="showPage('capacity')">
+        <span class="nav-icon">📊</span> Capacity Plan
+      </div>
+      <div class="nav-item" onclick="showPage('schedule')">
+        <span class="nav-icon">📅</span> Schedule
+      </div>
+      <div class="nav-item" onclick="showPage('summary')">
+        <span class="nav-icon">🗂️</span> Summary
+      </div>
+    </div>
+    <div class="sidebar-section">
+      <div class="sidebar-label">Config</div>
+      <div class="nav-item" onclick="showPage('settings')">
+        <span class="nav-icon">🔧</span> Settings
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── MAIN ── -->
+  <main>
+
+    <!-- ════════ UPLOAD ════════ -->
+    <div class="page active" id="page-upload">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Data Import</div>
+          <div class="page-subtitle">Upload your Excel (.xlsm/.xlsx) or enter data manually</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><div class="card-title">Import Excel File</div></div>
+        <div class="upload-zone" id="upload-zone">
+          <input type="file" accept=".xlsm,.xlsx,.xls" onchange="handleFileUpload(event)">
+          <div class="upload-icon">📄</div>
+          <div class="upload-title">Drop your Excel file here</div>
+          <div class="upload-sub">Supports SD Capacity Schedule .xlsm format · or click to browse</div>
+        </div>
+        <div id="upload-result" style="margin-top:16px;"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title">Quick Start — Manual Entry</div>
+        </div>
+        <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">
+          No file? Use the <strong>Products</strong> and <strong>Machines</strong> tabs to enter data manually, then run optimization from <strong>Capacity Plan</strong>.
+        </p>
+        <div class="btn-group">
+          <button class="btn btn-secondary" onclick="showPage('products')">➕ Add Products</button>
+          <button class="btn btn-secondary" onclick="showPage('machines')">⚙️ Configure Machines</button>
+          <button class="btn btn-secondary" onclick="loadSampleData()">🎲 Load Sample Data</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════ PRODUCTS ════════ -->
+    <div class="page" id="page-products">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Products</div>
+          <div class="page-subtitle">Style-size combinations with machine compatibility and demand</div>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-secondary btn-sm" onclick="showAddProductModal()">➕ Add Product</button>
+          <button class="btn btn-secondary btn-sm" onclick="loadProducts()">🔄 Refresh</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table id="products-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Style-Size</th>
+              <th>Machine Type</th>
+              <th>Cylinder</th>
+              <th>Capacity/Day</th>
+              <th>Compatible MCTs</th>
+              <th>Jul Demand</th>
+              <th>Priority</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="products-tbody">
+            <tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:40px;">No products loaded. Import Excel or add manually.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ════════ MACHINES ════════ -->
+    <div class="page" id="page-machines">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Machine Configuration</div>
+          <div class="page-subtitle">Set number of machines available per machine type</div>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-primary btn-sm" onclick="saveMachines()">💾 Save</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="form-grid" style="grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:16px;">
+          <div class="form-group">
+            <label class="form-label">Number of Working Days</label>
+            <input class="form-input" type="number" id="num-days-input" value="20" min="1" max="31">
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Machine Type</th>
+                <th>No. of Machines</th>
+                <th>Total Machine-Days</th>
+              </tr>
+            </thead>
+            <tbody id="machines-tbody">
+              <tr><td colspan="3" style="text-align:center;color:var(--text-muted);padding:24px;">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════ CAPACITY PLAN ════════ -->
+    <div class="page" id="page-capacity">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Capacity Plan & Optimization</div>
+          <div class="page-subtitle">Run LP solver to allocate machine-days to meet demand</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><div class="card-title">Select Month & Run</div></div>
+        <div class="month-grid" id="month-selector">
+          <!-- filled by JS -->
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-primary" onclick="runOptimize()">⚡ Run Optimization</button>
+          <button class="btn btn-secondary" onclick="showPage('schedule')">📅 View Schedule</button>
+        </div>
+      </div>
+
+      <div id="opt-results" style="display:none;">
+        <div class="stat-grid" id="opt-stats"></div>
+
+        <div class="card">
+          <div class="card-header"><div class="card-title">Machine Utilization</div></div>
+          <div id="mct-bars"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════ SCHEDULE ════════ -->
+    <div class="page" id="page-schedule">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Production Schedule</div>
+          <div class="page-subtitle" id="schedule-subtitle">Machine-day allocations per product</div>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-secondary btn-sm" onclick="exportScheduleCSV()">⬇ Export CSV</button>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table id="schedule-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Style-Size</th>
+              <th>Demand (pairs)</th>
+              <th>Produced (pairs)</th>
+              <th>Shortfall</th>
+              <th>Fulfillment</th>
+              <th>Machine-Day Allocations</th>
+            </tr>
+          </thead>
+          <tbody id="schedule-tbody">
+            <tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:40px;">Run optimization first.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ════════ SUMMARY ════════ -->
+    <div class="page" id="page-summary">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Capacity Summary</div>
+          <div class="page-subtitle">Machine surplus & shortage overview</div>
+        </div>
+      </div>
+
+      <div class="stat-grid" id="summary-stats"></div>
+
+      <div class="card">
+        <div class="card-header"><div class="card-title">Machine Type Summary</div></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Machine Type</th>
+                <th># Machines</th>
+                <th>Total M-Days</th>
+                <th>Used M-Days</th>
+                <th>Surplus M-Days</th>
+                <th>Utilization</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="summary-tbody">
+              <tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:40px;">Run optimization first.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════ SETTINGS ════════ -->
+    <div class="page" id="page-settings">
+      <div class="page-header">
+        <div>
+          <div class="page-title">Settings</div>
+          <div class="page-subtitle">Application configuration</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">General</div></div>
+        <div class="form-grid">
+          <div class="form-group">
+            <label class="form-label">Backend API URL</label>
+            <input class="form-input" id="api-url-input" value="http://localhost:5050">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Working Days per Period</label>
+            <input class="form-input" type="number" id="settings-days" value="20" min="1" max="31">
+          </div>
+        </div>
+        <div style="margin-top:16px;">
+          <button class="btn btn-primary" onclick="saveSettings()">💾 Save Settings</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header"><div class="card-title">About</div></div>
+        <p style="font-size:13px;color:var(--text-muted);line-height:1.7;">
+          <strong>SD Capacity Scheduler</strong> is a Python-powered web application that replicates the Excel-based 
+          capacity scheduling and solver functionality.<br><br>
+          The backend uses <strong>SciPy's Linear Programming solver (HiGHS)</strong> to optimally allocate machine-days 
+          across products and machine types to maximize demand fulfillment. The algorithm minimizes unmet demand 
+          (shortfalls) subject to machine capacity constraints and product-machine compatibility rules.
+        </p>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+// ─────────────────────────────────────────────
+// Config
+// ─────────────────────────────────────────────
+let API = 'http://localhost:5050';
+let selectedMonth = 'Jul';
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+let appState = { products: [], machines: [], num_days: 20 };
+let lastOptResult = null;
+
+// ─────────────────────────────────────────────
+// Navigation
+// ─────────────────────────────────────────────
+function showPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('page-' + id).classList.add('active');
+  document.querySelector(`[onclick="showPage('${id}')"]`).classList.add('active');
+
+  if (id === 'products') loadProducts();
+  if (id === 'machines') loadMachines();
+  if (id === 'capacity') renderMonthSelector();
+  if (id === 'schedule' && lastOptResult) renderSchedule(lastOptResult);
+  if (id === 'summary' && lastOptResult) renderSummary(lastOptResult);
+}
+
+// ─────────────────────────────────────────────
+// Toast
+// ─────────────────────────────────────────────
+function toast(msg, type='info') {
+  const icons = { success: '✅', error: '❌', info: 'ℹ️' };
+  const el = document.createElement('div');
+  el.className = `toast-item ${type}`;
+  el.innerHTML = `<span>${icons[type]}</span> ${msg}`;
+  document.getElementById('toast').appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
+
+// ─────────────────────────────────────────────
+// Loading
+// ─────────────────────────────────────────────
+function setLoading(show, msg='Running optimization...') {
+  const el = document.getElementById('loading');
+  el.querySelector('.loading-text').textContent = msg;
+  el.classList.toggle('show', show);
+}
+
+// ─────────────────────────────────────────────
+// API helpers
+// ─────────────────────────────────────────────
+async function apiFetch(path, opts={}) {
+  const res = await fetch(API + path, opts);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Request failed');
+  return data;
+}
+
+// ─────────────────────────────────────────────
+// File Upload
+// ─────────────────────────────────────────────
+async function handleFileUpload(evt) {
+  const file = evt.target.files[0];
+  if (!file) return;
+  setLoading(true, 'Parsing Excel file...');
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch(API + '/api/upload', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    document.getElementById('upload-result').innerHTML = `
+      <div class="badge badge-green">✓ ${data.message}</div>
+    `;
+    document.getElementById('data-status').textContent = `${data.num_products} products loaded`;
+    document.getElementById('data-status').className = 'status-badge ok';
+    toast(data.message, 'success');
+    await refreshState();
+  } catch(e) {
+    toast('Upload failed: ' + e.message, 'error');
+    document.getElementById('upload-result').innerHTML = `<div class="badge badge-red">✗ ${e.message}</div>`;
+  } finally { setLoading(false); }
+}
+
+async function refreshState() {
+  try {
+    appState = await apiFetch('/api/state');
+  } catch(e) {}
+}
+
+// ─────────────────────────────────────────────
+// Products
+// ─────────────────────────────────────────────
+async function loadProducts() {
+  try {
+    const products = await apiFetch('/api/products');
+    appState.products = products;
+    renderProductsTable(products);
+  } catch(e) { toast('Failed to load products: ' + e.message, 'error'); }
+}
+
+function renderProductsTable(products) {
+  const tbody = document.getElementById('products-tbody');
+  if (!products.length) {
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:40px;">No products loaded.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = products.map((p, idx) => {
+    const compat = p.compatible_machines.map(m => {
+      const short = m.machine_type.match(/MCT\d+|MCT \d+/)?.[0] || m.machine_type.slice(0,8);
+      return `<span class="badge badge-blue">${short}</span>`;
+    }).join(' ');
+    const totalDemand = Object.values(p.demands).reduce((a,b) => a + b, 0);
+    const julDemand = p.demands['Jul'] || 0;
+    return `<tr>
+      <td style="font-family:var(--mono);color:var(--text-muted)">${p.id}</td>
+      <td><strong>${p.style}</strong></td>
+      <td style="font-family:var(--mono);font-size:11px;color:var(--text-muted)">${p.machine_type}</td>
+      <td style="font-family:var(--mono);font-size:11px">${p.cylinder_type}</td>
+      <td style="font-family:var(--mono)">${p.capacity_per_day}</td>
+      <td>${compat}</td>
+      <td style="font-family:var(--mono)">${julDemand.toLocaleString()}</td>
+      <td>
+        <input class="inline-edit" type="number" value="${p.priority || 1000}"
+          onchange="updatePriority(${p.id}, this.value)">
+      </td>
+      <td><button class="btn btn-danger btn-sm" onclick="deleteProduct(${p.id})">✕</button></td>
+    </tr>`;
+  }).join('');
+}
+
+async function updatePriority(id, val) {
+  try {
+    await apiFetch(`/api/products/${id}`, {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ priority: parseInt(val) })
+    });
+  } catch(e) { toast('Failed to update priority', 'error'); }
+}
+
+async function deleteProduct(id) {
+  if (!confirm('Delete this product?')) return;
+  try {
+    await apiFetch(`/api/products/${id}`, { method: 'DELETE' });
+    toast('Product deleted', 'success');
+    loadProducts();
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+function showAddProductModal() {
+  toast('Manual product add: use the Excel import for full data', 'info');
+}
+
+// ─────────────────────────────────────────────
+// Machines
+// ─────────────────────────────────────────────
+async function loadMachines() {
+  try {
+    const [machines, config] = await Promise.all([
+      apiFetch('/api/machines'),
+      apiFetch('/api/config')
+    ]);
+    appState.machines = machines;
+    appState.num_days = config.num_days;
+    document.getElementById('num-days-input').value = config.num_days;
+    renderMachinesTable(machines, config.num_days);
+  } catch(e) { toast('Failed to load machines: ' + e.message, 'error'); }
+}
+
+function renderMachinesTable(machines, num_days) {
+  const tbody = document.getElementById('machines-tbody');
+  tbody.innerHTML = machines.map(m => `
+    <tr>
+      <td style="font-family:var(--mono);font-size:12px">${m.machine_type}</td>
+      <td>
+        <input class="inline-edit" type="number" min="0" max="100"
+          value="${m.num_machines}" style="width:60px"
+          onchange="m${m.machine_type.replace(/[^a-z0-9]/gi,'')}_count=this.value"
+          data-mct="${m.machine_type}" id="mct-input-${m.machine_type.replace(/[^a-z0-9]/gi,'')}">
+      </td>
+      <td style="font-family:var(--mono);color:var(--text-muted)">
+        <span id="mct-days-${m.machine_type.replace(/[^a-z0-9]/gi,'')}">${m.num_machines * num_days}</span>
+      </td>
+    </tr>
+  `).join('');
+
+  // Update displayed total days when input changes
+  tbody.querySelectorAll('input[data-mct]').forEach(inp => {
+    inp.addEventListener('input', function() {
+      const key = this.dataset.mct.replace(/[^a-z0-9]/gi,'');
+      const nd = parseInt(document.getElementById('num-days-input').value) || 20;
+      document.getElementById('mct-days-' + key).textContent = (parseInt(this.value)||0) * nd;
+    });
+  });
+}
+
+async function saveMachines() {
+  const tbody = document.getElementById('machines-tbody');
+  const inputs = tbody.querySelectorAll('input[data-mct]');
+  const num_days = parseInt(document.getElementById('num-days-input').value) || 20;
+
+  const updated = [];
+  inputs.forEach(inp => {
+    updated.push({ machine_type: inp.dataset.mct, num_machines: parseInt(inp.value) || 0 });
+  });
+
+  try {
+    await apiFetch('/api/machines', {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(updated)
+    });
+    await apiFetch('/api/config', {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ num_days })
+    });
+    appState.machines = updated;
+    appState.num_days = num_days;
+    toast('Machine config saved ✓', 'success');
+  } catch(e) { toast('Save failed: ' + e.message, 'error'); }
+}
+
+// ─────────────────────────────────────────────
+// Month Selector
+// ─────────────────────────────────────────────
+function renderMonthSelector() {
+  const products = appState.products;
+  const el = document.getElementById('month-selector');
+  el.innerHTML = MONTHS.map(m => {
+    const hasDemand = products.some(p => (p.demands[m] || 0) > 0);
+    const active = m === selectedMonth ? 'active' : '';
+    const cls = hasDemand ? 'has-demand' : '';
+    return `<button class="month-btn ${cls} ${active}" onclick="selectMonth('${m}')">${m}</button>`;
+  }).join('');
+}
+
+function selectMonth(m) {
+  selectedMonth = m;
+  document.querySelectorAll('.month-btn').forEach(btn => btn.classList.remove('active'));
+  event.target.classList.add('active');
+}
+
+// ─────────────────────────────────────────────
+// Optimization
+// ─────────────────────────────────────────────
+async function runOptimize() {
+  setLoading(true, `Solving for ${selectedMonth}...`);
+  try {
+    const result = await apiFetch('/api/optimize', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ month: selectedMonth })
+    });
+    lastOptResult = result;
+    document.getElementById('opt-status').textContent = `Optimized · ${selectedMonth}`;
+    document.getElementById('opt-status').className = 'status-badge ok';
+    renderOptResults(result);
+    toast(`Optimization complete · ${result.summary.overall_fulfillment_pct}% fulfilled`, 'success');
+  } catch(e) {
+    toast('Optimization failed: ' + e.message, 'error');
+  } finally { setLoading(false); }
+}
+
+function renderOptResults(result) {
+  const { summary, capacity_summary } = result;
+  document.getElementById('opt-results').style.display = 'block';
+
+  // Stats
+  const stats = [
+    { label: 'Total Demand', value: summary.total_demand.toLocaleString(), sub: 'pairs', color: 'var(--accent3)' },
+    { label: 'Produced', value: summary.total_produced.toLocaleString(), sub: 'pairs', color: 'var(--accent)' },
+    { label: 'Shortfall', value: summary.total_shortfall.toLocaleString(), sub: 'pairs', color: summary.total_shortfall > 0 ? 'var(--danger)' : 'var(--accent)' },
+    { label: 'Fulfillment', value: summary.overall_fulfillment_pct + '%', sub: 'of demand met', color: summary.overall_fulfillment_pct >= 90 ? 'var(--accent)' : 'var(--warn)' },
+    { label: 'M-Days Surplus', value: summary.surplus_machine_days.toLocaleString(), sub: 'machine-days spare', color: 'var(--accent3)' },
+    { label: 'M-Days Shortage', value: summary.shortage_machine_days.toLocaleString(), sub: 'machine-days short', color: summary.shortage_machine_days > 0 ? 'var(--danger)' : 'var(--accent)' },
+  ];
+
+  document.getElementById('opt-stats').innerHTML = stats.map(s => `
+    <div class="stat-card" style="--accent-color:${s.color}">
+      <div class="stat-label">${s.label}</div>
+      <div class="stat-value">${s.value}</div>
+      <div class="stat-sub">${s.sub}</div>
+    </div>
+  `).join('');
+
+  // MCT bars
+  const activeMcts = capacity_summary.filter(m => m.total_machine_days > 0);
+  document.getElementById('mct-bars').innerHTML = activeMcts.map(m => {
+    const pct = Math.min(m.utilization_pct, 100);
+    const color = pct > 95 ? 'var(--danger)' : pct > 80 ? 'var(--warn)' : 'var(--accent)';
+    const surplus = m.surplus_machine_days >= 0
+      ? `<span class="badge badge-green">+${m.surplus_machine_days.toFixed(1)}</span>`
+      : `<span class="badge badge-red">${m.surplus_machine_days.toFixed(1)}</span>`;
+    return `<div class="mct-row">
+      <div class="mct-name">${m.machine_type}</div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--text-muted)">${m.num_machines} mc</div>
+      <div>
+        <div class="progress-bar">
+          <div class="progress-fill" style="width:${pct}%;background:${color}"></div>
+        </div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text-muted);margin-top:2px">
+          ${m.used_machine_days.toFixed(1)} / ${m.total_machine_days} days
+        </div>
+      </div>
+      <div style="font-family:var(--mono);font-size:12px;color:${color}">${pct.toFixed(1)}%</div>
+      <div>${surplus}</div>
+    </div>`;
+  }).join('');
+}
+
+// ─────────────────────────────────────────────
+// Schedule
+// ─────────────────────────────────────────────
+function renderSchedule(result) {
+  const { schedule, month } = result;
+  document.getElementById('schedule-subtitle').textContent = `Machine-day allocations · ${month}`;
+  const tbody = document.getElementById('schedule-tbody');
+
+  if (!schedule || !schedule.length) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:40px;">No schedule data.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = schedule.map((s, i) => {
+    const fulfillClass = s.fulfillment_pct >= 95 ? 'badge-green' : s.fulfillment_pct >= 70 ? 'badge-orange' : 'badge-red';
+    const allocStr = Object.entries(s.allocations)
+      .map(([mct, days]) => {
+        const short = mct.match(/MCT\d+|MCT \d+/)?.[0] || mct.slice(0, 6);
+        return `<span class="badge badge-blue" title="${mct}">${short}: ${days.toFixed(1)}d</span>`;
+      }).join(' ');
+
+    return `<tr>
+      <td style="font-family:var(--mono);color:var(--text-muted)">${i+1}</td>
+      <td><strong>${s.style}</strong></td>
+      <td style="font-family:var(--mono)">${s.demand.toLocaleString()}</td>
+      <td style="font-family:var(--mono)">${s.produced.toLocaleString()}</td>
+      <td style="font-family:var(--mono);color:${s.shortfall > 0 ? 'var(--danger)' : 'var(--accent)'}">
+        ${s.shortfall > 0 ? '-' + s.shortfall.toLocaleString() : '—'}
+      </td>
+      <td><span class="badge ${fulfillClass}">${s.fulfillment_pct}%</span></td>
+      <td>${allocStr || '<span style="color:var(--text-dim)">—</span>'}</td>
+    </tr>`;
+  }).join('');
+}
+
+// ─────────────────────────────────────────────
+// Summary
+// ─────────────────────────────────────────────
+function renderSummary(result) {
+  const { summary, capacity_summary } = result;
+
+  const surplusMcts = capacity_summary.filter(m => m.surplus_machine_days > 0).length;
+  const shortageMcts = capacity_summary.filter(m => m.surplus_machine_days < 0).length;
+
+  document.getElementById('summary-stats').innerHTML = `
+    <div class="stat-card" style="--accent-color:var(--accent)">
+      <div class="stat-label">Surplus M-Days</div>
+      <div class="stat-value">${summary.surplus_machine_days.toLocaleString()}</div>
+      <div class="stat-sub">${surplusMcts} machine types with surplus</div>
+    </div>
+    <div class="stat-card" style="--accent-color:${summary.shortage_machine_days > 0 ? 'var(--danger)':'var(--accent)'}">
+      <div class="stat-label">Shortage M-Days</div>
+      <div class="stat-value">${summary.shortage_machine_days.toLocaleString()}</div>
+      <div class="stat-sub">${shortageMcts} machine types with shortage</div>
+    </div>
+    <div class="stat-card" style="--accent-color:var(--accent3)">
+      <div class="stat-label">Overall Fulfillment</div>
+      <div class="stat-value">${summary.overall_fulfillment_pct}%</div>
+      <div class="stat-sub">${summary.total_produced.toLocaleString()} / ${summary.total_demand.toLocaleString()} pairs</div>
+    </div>
+  `;
+
+  const tbody = document.getElementById('summary-tbody');
+  tbody.innerHTML = capacity_summary.map(m => {
+    const status = m.total_machine_days === 0 ? 'unused' :
+      m.surplus_machine_days > 0 ? 'surplus' :
+      m.surplus_machine_days < 0 ? 'shortage' : 'balanced';
+    const badgeCls = { surplus: 'badge-green', shortage: 'badge-red', balanced: 'badge-orange', unused: 'badge-blue' }[status];
+    return `<tr>
+      <td style="font-family:var(--mono);font-size:12px">${m.machine_type}</td>
+      <td style="font-family:var(--mono)">${m.num_machines}</td>
+      <td style="font-family:var(--mono)">${m.total_machine_days}</td>
+      <td style="font-family:var(--mono)">${m.used_machine_days.toFixed(1)}</td>
+      <td style="font-family:var(--mono);color:${m.surplus_machine_days >= 0 ? 'var(--accent)' : 'var(--danger)'}">
+        ${m.surplus_machine_days > 0 ? '+' : ''}${m.surplus_machine_days.toFixed(1)}
+      </td>
+      <td>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div class="progress-bar" style="width:80px">
+            <div class="progress-fill" style="width:${Math.min(m.utilization_pct,100)}%;background:${m.utilization_pct>95?'var(--danger)':m.utilization_pct>80?'var(--warn)':'var(--accent)'}"></div>
+          </div>
+          <span style="font-family:var(--mono);font-size:11px">${m.utilization_pct}%</span>
+        </div>
+      </td>
+      <td><span class="badge ${badgeCls}">${status}</span></td>
+    </tr>`;
+  }).join('');
+}
+
+// ─────────────────────────────────────────────
+// Export
+// ─────────────────────────────────────────────
+function exportScheduleCSV() {
+  if (!lastOptResult) { toast('Run optimization first', 'info'); return; }
+  const { schedule, month } = lastOptResult;
+  const rows = [['Style','Demand','Produced','Shortfall','Fulfillment%','Allocations']];
+  schedule.forEach(s => {
+    const alloc = Object.entries(s.allocations).map(([k,v]) => `${k}:${v}`).join('; ');
+    rows.push([s.style, s.demand, s.produced, s.shortfall, s.fulfillment_pct, alloc]);
+  });
+  const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `schedule_${month}.csv`;
+  a.click();
+}
+
+// ─────────────────────────────────────────────
+// Settings
+// ─────────────────────────────────────────────
+async function saveSettings() {
+  API = document.getElementById('api-url-input').value.trim().replace(/\/$/, '');
+  const days = parseInt(document.getElementById('settings-days').value) || 20;
+  try {
+    await apiFetch('/api/config', {
+      method: 'PUT',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ num_days: days })
+    });
+    toast('Settings saved ✓', 'success');
+  } catch(e) { toast(e.message, 'error'); }
+}
+
+// ─────────────────────────────────────────────
+// Sample Data
+// ─────────────────────────────────────────────
+async function loadSampleData() {
+  toast('Connect backend and use Excel import for real data', 'info');
+}
+
+// ─────────────────────────────────────────────
+// Init
+// ─────────────────────────────────────────────
+async function init() {
+  try {
+    appState = await apiFetch('/api/state');
+    if (appState.products.length) {
+      document.getElementById('data-status').textContent = `${appState.products.length} products`;
+      document.getElementById('data-status').className = 'status-badge ok';
+    }
+  } catch(e) {
+    document.getElementById('data-status').textContent = 'Backend offline';
+    document.getElementById('data-status').className = 'status-badge warn';
+    toast('Cannot reach backend at ' + API + '. Start with: python backend/app.py', 'error');
+  }
+}
+
+init();
+</script>
+</body>
+</html>
